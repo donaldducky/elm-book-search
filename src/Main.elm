@@ -1,4 +1,4 @@
-module Main exposing (Model, Msg(..), SearchResult, init, listSearchResults, main, onKeyUp, searchBooks, searchResultDecoder, searchResultRow, searchResultsDecoder, subscriptions, update, view)
+module Main exposing (Model, Msg(..), SearchResponse, SearchResult, init, listSearchResults, main, onKeyUp, searchBooks, searchResultDecoder, searchResultRow, searchResultsDecoder, subscriptions, update, view)
 
 import Browser
 import Debug exposing (toString)
@@ -6,7 +6,7 @@ import Html exposing (Attribute, Html, br, button, div, h2, h3, input, li, text,
 import Html.Attributes exposing (placeholder, size, value)
 import Html.Events exposing (keyCode, on, onClick, onInput)
 import Http
-import Json.Decode exposing (Decoder, field, list, map, map4, maybe, string)
+import Json.Decode exposing (Decoder, field, int, list, map, map2, map4, maybe, string)
 
 
 main =
@@ -24,7 +24,7 @@ main =
 
 type alias Model =
     { query : String
-    , results : List SearchResult
+    , results : SearchResponse
     , error : String
     }
 
@@ -37,9 +37,15 @@ type alias SearchResult =
     }
 
 
+type alias SearchResponse =
+    { num_found : Int
+    , docs : List SearchResult
+    }
+
+
 init : () -> ( Model, Cmd Msg )
 init _ =
-    ( Model "" [] ""
+    ( Model "" { num_found = 0, docs = [] } ""
     , Cmd.none
     )
 
@@ -52,7 +58,7 @@ type Msg
     = Reset
     | SetQuery String
     | Search
-    | GotSearchResult (Result Http.Error (List SearchResult))
+    | GotSearchResult (Result Http.Error SearchResponse)
     | KeyUp Int
 
 
@@ -76,8 +82,8 @@ update msg model =
             , searchBooks model.query
             )
 
-        GotSearchResult result ->
-            case result of
+        GotSearchResult response ->
+            case response of
                 Ok results ->
                     ( { model | results = results }
                         |> Debug.log "Results"
@@ -85,7 +91,7 @@ update msg model =
                     )
 
                 Err err ->
-                    ( { model | results = [], error = toString err }
+                    ( { model | results = { num_found = 0, docs = [] }, error = toString err }
                     , Cmd.none
                     )
 
@@ -127,12 +133,12 @@ view model =
         ]
 
 
-listSearchResults : List SearchResult -> Html Msg
+listSearchResults : SearchResponse -> Html Msg
 listSearchResults results =
-    if List.length results > 0 then
+    if List.length results.docs > 0 then
         div []
-            [ h2 [] [ text "Search Results" ]
-            , ul [] (List.map searchResultRow results)
+            [ h2 [] [ text ("Search Results (" ++ String.fromInt results.num_found ++ " results)") ]
+            , ul [] (List.map searchResultRow results.docs)
             ]
 
     else
@@ -186,9 +192,11 @@ searchResultDecoder =
         (field "seed" (list string))
 
 
-searchResultsDecoder : Decoder (List SearchResult)
+searchResultsDecoder : Decoder SearchResponse
 searchResultsDecoder =
-    field "docs" (list searchResultDecoder)
+    map2 SearchResponse
+        (field "num_found" int)
+        (field "docs" (list searchResultDecoder))
 
 
 onKeyUp : (Int -> msg) -> Attribute msg
